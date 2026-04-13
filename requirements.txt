@@ -2,3 +2,5 @@ pyTelegramBotAPI
 requests
 numpy
 cryptography
+flask
+gunicorn
