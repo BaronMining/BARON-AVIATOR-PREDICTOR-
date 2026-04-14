@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# exit on error
 set -o errexit
 
 STORAGE_DIR=/opt/render/project/.render
@@ -13,5 +12,9 @@ if [[ ! -d $STORAGE_DIR/chrome ]]; then
   tar xvf data.tar.xz
 fi
 
-cd $opt/render/project/src # Go back to your code
+# Clean up any old sessions to save memory
+rm -rf /tmp/.com.google.Chrome.*
+
+cd /opt/render/project/src
+pip install --upgrade pip
 pip install -r requirements.txt
