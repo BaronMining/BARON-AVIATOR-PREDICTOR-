@@ -1,7 +1,4 @@
 pyTelegramBotAPI
-requests
-numpy
-cryptography
 flask
-gunicorn
-selenium 
+selenium
+webdriver-manager
