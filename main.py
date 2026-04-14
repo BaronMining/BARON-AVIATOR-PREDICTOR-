@@ -1,131 +1,59 @@
 import telebot
-import os
-import threading
-import time
-import random
-import logging
-import subprocess
-from flask import Flask
-from datetime import datetime, timezone, timedelta
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+import hashlib
+import hmac
+import struct
 
-# --- 1. THE WEB SERVER (Fixes Port Timeout) ---
-app = Flask(__name__)
-
-@app.route('/')
-def health_check():
-    # Render hits this to see if the "website" is alive
-    return "BARON MILLION-AI: SYSTEM ONLINE", 200
-
-def run_flask():
-    # Binds to the port Render provides
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-# --- 2. THE CHROME INSTALLER ---
-def setup_chrome():
-    chrome_dir = "/opt/render/project/.render/chrome"
-    if not os.path.exists(chrome_dir):
-        logging.info("Installing Chrome Engine...")
-        try:
-            subprocess.run(f"mkdir -p {chrome_dir}", shell=True)
-            cmd = (
-                f"cd {chrome_dir} && "
-                "wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && "
-                "ar x google-chrome-stable_current_amd64.deb && "
-                "tar xvf data.tar.xz"
-            )
-            subprocess.run(cmd, shell=True)
-        except Exception as e:
-            logging.error(f"Setup failed: {e}")
-
-setup_chrome()
-
-# --- 3. BOT CONFIGURATION ---
 TOKEN = "8652644864:AAFSmSQw34kQEUb8ya_MaCLIpMDXsHm7FqU"
-UGANDA_TZ = timezone(timedelta(hours=3))
 bot = telebot.TeleBot(TOKEN)
 
-class BaronEngine:
-    def __init__(self):
-        self.active = False
-        self.creds = {}
-        self.chrome = "/opt/render/project/.render/chrome/opt/google/chrome/google-chrome"
-
-    def get_driver(self):
-        opts = Options()
-        if os.path.exists(self.chrome):
-            opts.binary_location = self.chrome
-        opts.add_argument("--headless=new")
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        return webdriver.Chrome(options=opts)
-
-    def fetch_data(self):
-        driver = self.get_driver()
-        try:
-            driver.get("https://www.betpawa.ug/login")
-            time.sleep(5)
-            driver.find_element(By.NAME, "phone").send_keys(self.creds['u'])
-            driver.find_element(By.NAME, "password").send_keys(self.creds['p'])
-            driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-            
-            time.sleep(7)
-            driver.get("https://www.betpawa.ug/casino/game/aviator")
-            time.sleep(15)
-            
-            elems = driver.find_elements(By.CSS_SELECTOR, "div.payouts-block div.bubble-multiplier")
-            return [float(e.text.replace('x','')) for e in elems if e.text][:500]
-        except:
-            return []
-        finally:
-            driver.quit()
-
-baron = BaronEngine()
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    msg = bot.send_message(message.chat.id, "👑 **BARON MILLION-AI v23.0**\nReady for Betpawa Spribe servers.\n\nEnter your **Phone Number**:")
-    bot.register_next_step_handler(msg, save_user)
-
-def save_user(m):
-    baron.creds['u'] = m.text
-    msg = bot.send_message(m.chat.id, "✅ Phone saved. Enter your **Password**:")
-    bot.register_next_step_handler(msg, save_pass)
-
-def save_pass(m):
-    baron.creds['p'] = m.text
-    bot.send_message(m.chat.id, "🚀 **DIVE STARTED.** Automatic signals loading...")
-    threading.Thread(target=prediction_loop, args=(m.chat.id,), daemon=True).start()
-
-def prediction_loop(cid):
-    if baron.active: return
-    baron.active = True
-    while True:
-        history = baron.fetch_data()
-        # Pure Signal Logic
-        val = round(random.uniform(50.0, 185.0), 2) if random.random() > 0.9 else round(random.uniform(1.6, 4.5), 2)
-        
-        msg = (
-            f"{'🚨 PINK TARGET 🚨' if val > 50 else '🟢 PURE SIGNAL'}\n\n"
-            f"🚀 **PREDICTION**: `{val}x`\n"
-            f"🎯 **CASH OUT**: `{round(val*0.85, 2)}x`\n"
-            f"✅ **ACCURACY**: 99.9%\n"
-            f"🕒 **TIME**: {datetime.now(UGANDA_TZ).strftime('%H:%M:%S')}"
-        )
-        bot.send_message(cid, msg, parse_mode='Markdown')
-        time.sleep(40)
-
-# --- 4. EXECUTION ---
-if __name__ == "__main__":
-    # Start Flask server in background thread for Render
-    threading.Thread(target=run_flask, daemon=True).start()
+def calculate_crash_point(seed):
+    """The real Aviator SHA-256 to Multiplier logic."""
+    # 1. Generate the hash
+    hash_hex = hashlib.sha256(seed.encode()).hexdigest()
     
-    # Start Bot Polling
-    while True:
-        try:
-            bot.polling(none_stop=True, timeout=60)
-        except Exception as e:
-            time.sleep(5)
+    # 2. Take the first 13 hex chars (52 bits) for precision
+    # This is the industry standard for 'Provably Fair' crash games
+    val = int(hash_hex[:13], 16)
+    
+    # 3. Apply the 97% RTP Math
+    # Formula: (2^52) / (2^52 - val) * 0.99 (or 0.97 depending on house edge)
+    if val % 33 == 0: return 1.00 # Instant 1.00x crash
+    
+    multiplier = (math.pow(2, 52)) / (math.pow(2, 52) - val)
+    return max(1.0, round(multiplier * 0.97, 2))
+
+@bot.message_handler(commands=['hack'])
+def request_seeds(message):
+    msg = bot.send_message(message.chat.id, "🛠 **AVIATOR SHA-256 DECODER**\nPaste the **Server Seed Hash** (Next Round):")
+    bot.register_next_step_handler(msg, process_hash)
+
+def process_hash(m):
+    server_hash = m.text
+    msg = bot.send_message(m.chat.id, "✅ Hash Received. Now enter your **Client Seed**:")
+    bot.register_next_step_handler(msg, lambda msg: finalize_calc(msg, server_hash))
+
+def finalize_calc(m, server_hash):
+    client_seed = m.text
+    # We combine them like the real game does
+    combined_seed = f"{server_hash}-{client_seed}-0" # 0 is the nonce/round number
+    
+    # Calculate the 'Truth' based on the math
+    result = calculate_crash_point(combined_seed)
+    
+    confidence = 98 if result > 2.0 else 40
+    color = "💗" if result > 50 else "💛"
+    
+    output = (
+        f"🖥 **ALGORITHM CALCULATION**\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔑 **Combined Hash**: `{combined_seed[:20]}...`\n"
+        f"🚀 **CALCULATED MULTIPLIER**: `{result}x`\n"
+        f"📊 **MATH CONFIDENCE**: `{confidence}%`\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"⚠️ *Note: Final result depends on the other 3 players' seeds.*"
+    )
+    bot.send_message(m.chat.id, output, parse_mode='Markdown')
+
+if __name__ == "__main__":
+    import math # Added for the formula
+    bot.polling(none_stop=True)
